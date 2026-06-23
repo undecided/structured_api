@@ -1,10 +1,4 @@
-require_relative '../lib/structured_api'
-
-ASK = lambda { |q, default = ''|
-  puts q, "Default: #{default} >> "
-  out = STDIN.gets.strip
-  out == '' ? default : out
-}
+require_relative 'example_utilities'
 
 class GhostCms < StructuredApi::Endpoint
   url ASK['What URL is your ghostcms at?', 'https://demo.ghost.io'] + '/ghost/api/v4/content'
@@ -31,7 +25,15 @@ class GhostCms::Authors < GhostCms
   path '/authors'
 end
 
-puts GhostCms::Authors.new.debug!.run!
-puts GhostCms::Posts.new.debug!.run!.inspect
+authors = JSON.parse(GhostCms::Authors.new.debug!.run!)['authors']
+posts = JSON.parse(GhostCms::Posts.new.debug!.run!)['posts']
 
-puts GhostCms::GetPost.new.id(ASK['Enter a ghost post id', '5979a779df093500228e958d']).debug!.run!
+authors.each do |author|
+  puts "Author: #{author['id']} => #{author['name'][0..100]}"
+end
+
+posts.each do |post|
+  puts "Post: #{post['id']} => #{post['title'][0..100]}...\n#{post['html'][0..100]}...\n"
+end
+
+GhostCms::GetPost.new.id(ASK['Enter a ghost post id', posts.first['id']]).debug!.run!

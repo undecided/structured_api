@@ -30,7 +30,7 @@ module Ghost::Settings < StructuredApi::Settings
   # response is a Ghost::BlogPost::Response instance, with .headers, .data, .raw_data
   # e.g "<h1>derp</h1>", {}, 404
   # and also .request, in case you need something from that
-  log_incoming do |response|  
+  log_incoming do |response|
     # do something with it
   end
 
@@ -55,8 +55,8 @@ class Ghost::BlogPost < StructuredApi::Endpoint
   action('posts')
   params(include: -> { including.join(",") })
 
-  format_request do
-    # or maybe def format_request to make self clearer?
+  process_request do
+    # or maybe def process_request to make self clearer?
     raw_data.to_json
   end
 
@@ -86,5 +86,57 @@ Ghost::BlogPost.new.headers(api_version: "v2").run!
 # or maybe we're being real heathens:
 
 StructuredApi::Endpoint.new.url("https://google.com").verb(:get).run!
+
+```
+
+
+### Phase 2
+
+Again, this is me just spitballing - I have no idea whether this is possible...
+
+```ruby
+class Ghost::General < StructuredApi::Endpoint
+  ## All these could be implemented using before_request / after_request
+  url "https://demo.ghost.io"
+  add_path "ghost/api/v3/content" # clear_path, merge_params, clear_params
+  verb :post
+
+  ## endpoint needs to know what state it's in - e.g. endpoint.request.state
+  ## request = nil
+  ##  => request.state => [:configuring] # <= should be a struct instead of array btw
+  ##  => [:before_request, 4(an internal idx), [PayloadStore, :from_endpoint]]
+  ##  => [:in_my_cup, 5, #<proc#badcad1...>]
+  ##  => [:two_shots, 6, #<proc#badcad1...>]
+  ##  => [:performing_request]
+  ##  => [:after_request, 0, #<proc#badcad1...>]
+  ## before_request! cancels request and raises the exception - maybe can be resumed with .resume or .restart
+  ## before_request catches any exceptions (configurable catcher so you can make some always raise)
+
+  ## Note: this is the only one that replaces. All the others append
+  exception_catcher ->(endpoint, error) { ... swallow, spit or quit quietly with endpoint.cancel ...}
+
+  on_state_change ->(endpoint, request_or_response) { ... request_or_response.state ...}
+
+  before_request ->(endpoint) { endpoint.request.payload = JSON.parse(endpoint.request.body) }
+  before_request name: :skippy, do |endpoint| ... end
+  before_request! PayloadStore, :from_endpoint # <= calls this with endpoint
+  before_request EndpointLoggerService # <= defaults to .call(endpoint)
+  before_request :log_to_disk # <= just called (doesn't need args, has self)
+  before_request ->(...) {...}, name: :two_shots
+  before_request ->(...) {...}, name: :in_my_cup, before: :two_shots
+
+  skip_request :skippy
+
+  after_request ->(endpoint) { endpoint.response.body = JSON.parse(endpoint.response.body) }
+  after_request! PayloadStore, :from_endpoint # ... etc. endpoint.response is nil if we haven't started
+
+  executor do |request, response| # request full, response empty and ready to go
+    typh_response = Typhoeus::....(request....)
+    response.populate(headers: typh_response.headers, ...)
+  end
+end
+
+
+
 
 ```

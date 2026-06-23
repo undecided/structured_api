@@ -1,75 +1,122 @@
 module StructuredApi
   module StructuredApiable
-    # TODO: Needs clear_attr(name) methods
     # TODO: Raise an exception on the singleton methods if self.class == StructuredApi::Endpoint (it will pollute everything)
 
+    # This is where the magic happens, and I agree - it's too much magic.
     # Defines an instance method and a class method,
     # where the class method sets the template for a thing
     # and the instance method uses that and extends it.
     # Fetched with get_method_or_attr(name, default_if_missing)
-    def hash_attr(name)
-      define_singleton_method name do |incoming|
-        hash = instance_variable_get(:"@#{name}") || {}
-        instance_variable_set(:"@#{name}", hash)
-        hash.merge!(incoming)
+    # NOTE: my_attr {} syntax would be cool, allowing delayed execution and subclassing
+    # Note: empty_value cannot be nil
+    def define_attr(name, empty_value, unset_value, concat_or_replace = :concat, fn_concat = ->(a,b) { a + b })
+      raise "concat_or_replace must be :concat or :replace" unless [:concat, :replace].include?(concat_or_replace)
+      fn_concat = ->(a,b) { b } if concat_or_replace == :replace
+
+      instance_variable_set(:"@#{name}", unset_value) unless unset_value == empty_value
+
+      define_singleton_method "has_#{name}?" do
+        instance_variable_defined?(:"@#{name}")
+      end
+
+      define_singleton_method(name.to_sym) do |incoming = nil, &block|
+        raise "Cannot pass both incoming and block" if incoming && block
+        raise "Cannot use a block on concat-style fields" if block && concat_or_replace == :concat
+
+        value = if concat_or_replace == :replace
+          incoming || block # we don't want to try to call a block we don't need
+        else
+          fn_concat.call(get_attr(name, empty_value).dup, incoming)
+        end
+        instance_variable_set(:"@#{name}", value)
         self
       end
+
       define_singleton_method :"clear_#{name}" do
-        instance_variable_set(:"@#{name}", {})
+        instance_variable_set(:"@#{name}", empty_value)
+        self
+      end if concat_or_replace == :concat
+
+      define_method(name.to_sym) do |incoming = nil, &block|
+        incoming = instance_exec(&block) if block
+        value = fn_concat.call(get_attr(name, empty_value), incoming)
+        instance_variable_set(:"@#{name}", value)
         self
       end
-      define_method name do |incoming|
-        hash = get_method_or_attr(name, {})
-        instance_variable_set(:"@#{name}", hash)
-        hash.merge!(incoming)
-        self
-      end
+
       define_method :"clear_#{name}" do
-        instance_variable_set(:"@#{name}", {})
+        instance_variable_set(:"@#{name}", empty_value)
         self
       end
     end
+    module_function :define_attr
+
+    def hash_attr(name, empty_value: {}, default: empty_value, if_exists: :concat)
+      define_attr(name, empty_value, default, if_exists, ->(a,b) { a.merge(b) })
+    end
     module_function :hash_attr
 
-    def stringish_attr(name)
-      define_singleton_method name do |incoming|
-        str = incoming || instance_variable_get(:"@#{name}")
-        instance_variable_set(:"@#{name}", str)
-        self
-      end
-      define_singleton_method :"clear_#{name}" do
-        instance_variable_set(:"@#{name}", '')
-        self
-      end
-      define_method name do |incoming|
-        str = incoming || get_method_or_attr(name)
-        instance_variable_set(:"@#{name}", str)
-        self
-      end
-      define_method :"clear_#{name}" do
-        instance_variable_set(:"@#{name}", '') # TODO: replace with ->() {nil} maybe?
-        self
-      end
+    def array_attr(name, empty_value: [], default: empty_value, if_exists: :concat)
+      define_attr(name, empty_value, default, if_exists)
+    end
+    module_function :array_attr
+
+    def stringish_attr(name, empty_value: '', default: empty_value, if_exists: :replace)
+      define_attr(name, empty_value, default, if_exists)
     end
     module_function :stringish_attr
 
     def self.extended(other)
+      other.define_singleton_method :has_attr? do |name|
+        instance_variable_defined?(:"@#{name}") ||
+          (superclass&.has_attr?(name) if superclass&.respond_to?(:has_attr?)) ||
+          false
+      end
+
+      other.define_singleton_method :get_attr do |name, default = nil|
+        result = instance_variable_get(:"@#{name}") ||
+          (superclass&.get_attr(name, nil) if superclass&.respond_to?(:get_attr)) ||
+          default
+        result.respond_to?(:call) ? instance_variable_set(:"@#{name}", result.call) : result
+      end
+
+      other.define_singleton_method :append_lifecycle_hook do |hook_name, &block|
+        lifecycle_hooks([{ name: hook_name, block: block }])
+        self
+      end
+
+      other.define_singleton_method :prepend_lifecycle_hook do |hook_name, &block|
+        get_attr(:lifecycle_hooks, []).unshift({ name: hook_name, block: block })
+        self
+      end
+
       other.define_method :get_method_or_attr do |name, default = nil|
-        (respond_to?(:"override_#{name}") && send(:"override_#{name}")) ||
-          get_attr(name, default)
+        return send(:"override_#{name}") if respond_to?(:"override_#{name}")
+        get_attr(name, default)
       end
 
       other.define_method :get_attr do |name, default = nil|
-        instance_variable_get(:"@#{name}") ||
-          self.class.ancestors.map { |x| x.instance_variable_get(:"@#{name}").dup }.compact.first ||
-          default
+        attr = instance_variable_get(:"@#{name}") ||
+          self.class.get_attr(name, default)
+        attr || default&.dup&.tap { |d| instance_variable_set(:"@#{name}", d) }
       end
+
+      other.define_method :trigger_lifecycle_hooks do |hook_name, additional_data = {}|
+        self.class.get_attr(:lifecycle_hooks, {})
+          .select { |h| h[:name] == hook_name }
+          .each do |h|
+            puts "executing #{hook_name} hook from #{h[:block].source_location&.join(':') || 'unknown location'} on #{self.class.name}" if @debug
+            instance_exec(additional_data, &h[:block])
+          end
+      end
+
       other.send :stringish_attr, :url
       other.send :stringish_attr, :path
       other.send :stringish_attr, :verb
       other.send :hash_attr, :params
       other.send :hash_attr, :headers
       other.send :stringish_attr, :body
+      other.send :array_attr, :lifecycle_hooks
     end
   end
 end

@@ -9,19 +9,35 @@ module StructuredApi
     end
 
     def run!
-      run_request.response_body
+      response = run_request
+      return response unless block_given?
+
+      yield response
+      return self
     end
 
-    private
+    def rerun!(&block)
+      @run_request = nil
+      run!(&block)
+    end
+
+    private # TODO: Use visitor pattern to prevent possible clashes
 
     def run_request
-      puts typhoeus_params.inspect if @debug
-      @run_request ||=
-        Typhoeus::Request.new(*typhoeus_params).run
+      @run_request ||= begin
+        trigger_lifecycle_hooks(:before_request)
+        final_params = typhoeus_params
+        puts final_params.inspect if @debug
+        response = {response: Typhoeus::Request.new(*final_params).run.response_body}
+        puts response if @debug
+        trigger_lifecycle_hooks(:after_response, response)
+        response[:response]
+      end
     end
 
     def url_and_path
-      my_url = get_method_or_attr(:url, nil)
+      my_url = get_attr(:url, nil)
+      my_url = my_url.call if my_url.respond_to?(:call)
       raise InvalidRequest, 'At least a url is needed' unless my_url
 
       my_url = my_url[0..-2] if my_url[-1] == '/'

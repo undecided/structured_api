@@ -11,9 +11,7 @@ describe StructuredApi::Endpoint do
   end
 
   context 'calling apis in direct mode' do
-    before do
-      do_the_stubbing
-    end
+    before { do_the_stubbing }
 
     context 'with defaults on the non-required fields' do
       subject { described_class.new.url(uri).run! }
