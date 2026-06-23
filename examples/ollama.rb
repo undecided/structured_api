@@ -1,5 +1,5 @@
 require_relative 'example_utilities'
-DEBUG = true # turn this off if it's all too noisy for you
+DEBUG = false # gets a bit noisy, but tells you exactly what's going on
 
 class Ollama < StructuredApi::Endpoint
   url ASK['What URL is your ollama at?', 'http://localhost:11434']
@@ -20,12 +20,13 @@ class Ollama < StructuredApi::Endpoint
   )
 
   append_lifecycle_hook :before_request do |_|
+    puts "** Contacting Ollama..."
     body(build_body.to_json) # stringish_attrs replace
   end
 
   append_lifecycle_hook :after_response do |response_hash| # {response: ...} - you can completely change what gets returned
-    response_hash[:response] = parsed = JSON.parse(response_hash[:response])
-    messages([parsed["message"].except("thinking")]) # array_attrs append (with +) instead of replacing
+    response_hash[:response] = JSON.parse(response_hash[:response]).deep_symbolize_keys
+    messages([response_hash.dig(:response, :message)]) # array_attrs append (with +) instead of replacing
   end
 
   def override_messages
@@ -37,7 +38,7 @@ class Ollama < StructuredApi::Endpoint
 
   def build_body
     {
-      messages: get_method_or_attr(:messages),
+      messages: get_method_or_attr(:messages).map { |msg| msg.slice(:role, :name, :content, :tool_calls) }, # reduce tokens
       model: get_method_or_attr(:model),
       options: get_method_or_attr(:options),
       stream: false # TODO: How to stream true? Should we add streaming functionality?
@@ -60,17 +61,28 @@ end
 
 
 class OllamaRunner
+  def self.faint_puts(str)
+    puts "\033[2m#{str}\033[0m"
+  end
+
+  def self.strong_puts(str)
+    puts "\033[1;4m#{str}\033[0m"
+  end
+
   def self.call(klass)
-    puts "Running #{klass.name} now..."
-
     # Note: this now returns a hash, thanks to the lifecycle hook
-    response = klass.new.debug!(DEBUG).run!
+    runner = klass.new.debug!(DEBUG)
+    response = runner.run! # we could just use this response, but we shan't for now
 
-    simplified_results = response.deep_dup
-    simplified_results["message"]["content"] = "..."
-    puts JSON.pretty_generate(simplified_results)
-    puts "#{ "=" * 80 }"
-    puts response["message"]["content"]
+    runner.get_method_or_attr(:messages).each do |message|
+      content, message[:content] = message[:content], "..." if message.key?(:content)
+      thinking, message[:thinking] = message[:thinking], "..." if message.key?(:thinking)
+      strong_puts message[:role].to_s.upcase
+      faint_puts JSON.pretty_generate(message)
+      faint_puts thinking if thinking
+      puts content if content
+      faint_puts "\n#{ "=" * 80 }\n"
+    end
   rescue => e
     puts "Couldn't parse response: #{e.message}"
     puts response

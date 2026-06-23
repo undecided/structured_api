@@ -3,13 +3,9 @@ module StructuredApi
     # TODO: Raise an exception on the singleton methods if self.class == StructuredApi::Endpoint (it will pollute everything)
 
     # This is where the magic happens, and I agree - it's too much magic.
-    # Defines an instance method and a class method,
-    # where the class method sets the template for a thing
-    # and the instance method uses that and extends it.
-    # Fetched with get_method_or_attr(name, default_if_missing)
-    # NOTE: my_attr {} syntax would be cool, allowing delayed execution and subclassing
+    # TODO: Document a bit better - lots of sharp corners here
     # Note: empty_value cannot be nil
-    def define_attr(name, empty_value, unset_value, concat_or_replace = :concat, fn_concat = ->(a,b) { a + b })
+    def define_attr(name, empty_value, unset_value, concat_or_replace = :concat, fn_concat = ->(a,b) { a + b }, fn_cast: ->(x){x})
       raise "concat_or_replace must be :concat or :replace" unless [:concat, :replace].include?(concat_or_replace)
       fn_concat = ->(a,b) { b } if concat_or_replace == :replace
 
@@ -23,8 +19,9 @@ module StructuredApi
         raise "Cannot pass both incoming and block" if incoming && block
         raise "Cannot use a block on concat-style fields" if block && concat_or_replace == :concat
 
+        incoming = fn_cast.call(incoming)
         value = if concat_or_replace == :replace
-          incoming || block # we don't want to try to call a block we don't need
+          block || incoming  # we don't want to try to call a block we don't need
         else
           fn_concat.call(get_attr(name, empty_value).dup, incoming)
         end
@@ -39,6 +36,7 @@ module StructuredApi
 
       define_method(name.to_sym) do |incoming = nil, &block|
         incoming = instance_exec(&block) if block
+        incoming = fn_cast.call(incoming)
         value = fn_concat.call(get_attr(name, empty_value), incoming)
         instance_variable_set(:"@#{name}", value)
         self
@@ -57,12 +55,12 @@ module StructuredApi
     module_function :hash_attr
 
     def array_attr(name, empty_value: [], default: empty_value, if_exists: :concat)
-      define_attr(name, empty_value, default, if_exists)
+      define_attr(name, empty_value, default, if_exists, fn_cast: ->(x){Array(x)})
     end
     module_function :array_attr
 
     def stringish_attr(name, empty_value: '', default: empty_value, if_exists: :replace)
-      define_attr(name, empty_value, default, if_exists)
+      define_attr(name, empty_value, default, if_exists) # no cast - we allow blocks, symbols... all sorts
     end
     module_function :stringish_attr
 
@@ -77,7 +75,8 @@ module StructuredApi
         result = instance_variable_get(:"@#{name}") ||
           (superclass&.get_attr(name, nil) if superclass&.respond_to?(:get_attr)) ||
           default
-        result.respond_to?(:call) ? instance_variable_set(:"@#{name}", result.call) : result
+        return result unless result.respond_to?(:call)
+        instance_variable_set(:"@#{name}", result.call) # cache the result and return
       end
 
       other.define_singleton_method :append_lifecycle_hook do |hook_name, &block|
