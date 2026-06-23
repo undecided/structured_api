@@ -2,26 +2,29 @@ require_relative 'example_utilities'
 DEBUG = false # gets a bit noisy, but tells you exactly what's going on
 
 class Ollama < StructuredApi::Endpoint
-  url ASK['What URL is your ollama at?', 'http://localhost:11434']
+  url ASK['What URL is your ollama at?', 'http://localhost:11434'] # happens immediately, without waiting to run
   path 'api/chat'
   verb :post
-  headers({'Content-Type' => 'application/json'})
+  headers({'Content-Type' => 'application/json'}) # these merge, so you can add more or replace in a subclass
+
+  # You can define your own attributes (like path, verb etc)
+  # and you decide how they are used.
   stringish_attr :system_prompt, default: 'You are a helpful assistant'
   stringish_attr :prompt
   stringish_attr :model, default: 'gemma4:latest'
   array_attr :messages
   hash_attr :options
 
-  system_prompt 'You are a helpful assistant' # note we override this in a subclass
-  prompt ASK[%q{What's your question?}]
+  prompt { ASK[%q{What's your question?}] } # The block delays the action until the attribute is accessed
+
   options(
     num_ctx: 4096,
     think: false # This seems to get ignored on gemma4
   )
 
   append_lifecycle_hook :before_request do |_|
+    body(build_body.to_json) # stringish_attrs replace. Note that block-attributes such as prompt {...} run now
     puts "** Contacting Ollama..."
-    body(build_body.to_json) # stringish_attrs replace
   end
 
   append_lifecycle_hook :after_response do |response_hash| # {response: ...} - you can completely change what gets returned
@@ -33,18 +36,23 @@ class Ollama < StructuredApi::Endpoint
     [
       {role: :system, content: get_method_or_attr(:system_prompt)},
       {role: :user, content: get_method_or_attr(:prompt)}
-    ] + get_attr(:messages, [])
+    ] + get_attr(:messages, []) # if we did get_method_or_attr here, we'd call override_messages til stack overflow
   end
 
   def build_body
     {
-      messages: get_method_or_attr(:messages).map { |msg| msg.slice(:role, :name, :content, :tool_calls) }, # reduce tokens
+      messages: messages_without_thinking,
       model: get_method_or_attr(:model),
       options: get_method_or_attr(:options),
       stream: false # TODO: How to stream true? Should we add streaming functionality?
     }
   end
-  # # might need bearer key (how?)
+
+  def messages_without_thinking
+    get_method_or_attr(:messages).map do |msg|
+      msg.slice(:role, :name, :content, :tool_calls)
+    end
+  end
 end
 
 
@@ -69,20 +77,30 @@ class OllamaRunner
     puts "\033[1;4m#{str}\033[0m"
   end
 
+  def self.display_full_message(message)
+    content, message[:content] = message[:content], "..." if message.key?(:content)
+    thinking, message[:thinking] = message[:thinking], "..." if message.key?(:thinking)
+    strong_puts message[:role].to_s.upcase
+    faint_puts JSON.pretty_generate(message)
+    faint_puts thinking if thinking
+    faint_puts "\n#{ "-" * 80 }\n"
+    puts content if content
+    faint_puts "\n#{ "=" * 80 }\n"
+  end
+
   def self.call(klass)
     # Note: this now returns a hash, thanks to the lifecycle hook
     runner = klass.new.debug!(DEBUG)
     response = runner.run! # we could just use this response, but we shan't for now
 
     runner.get_method_or_attr(:messages).each do |message|
-      content, message[:content] = message[:content], "..." if message.key?(:content)
-      thinking, message[:thinking] = message[:thinking], "..." if message.key?(:thinking)
-      strong_puts message[:role].to_s.upcase
-      faint_puts JSON.pretty_generate(message)
-      faint_puts thinking if thinking
-      puts content if content
-      faint_puts "\n#{ "=" * 80 }\n"
+      display_full_message(message)
     end
+
+    runner.prompt { ASK[%q{What are your thoughts on this?}] }.rerun!
+    runner.get_method_or_attr(:messages)
+      .last
+      .tap { |message| display_full_message(message) }
   rescue => e
     puts "Couldn't parse response: #{e.message}"
     puts response

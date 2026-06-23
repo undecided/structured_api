@@ -11,13 +11,12 @@ Eventually, this will encompass:
  - [X] Class hierarchy - e.g. create an ApplicationClient with auth settings,
  and extend that for each endpoint
  - [X] Ability to define attributes and override previously defined attributes using methods
- - [ ] Helpers for common methods, such as basic auth
- - [ ] Path hierarchy - e.g. FooApi set URL as 'foo.com', FooApi::V1 as '/v1', then endpoint
+ - [X] Virtual Attributes - e.g. specify that your API takes a customer, and use
  - [ ] Data munging hooks - how do we transform our domain language into theirs?
+ that customer in your data munging phase (or anywhere really)
+ - [ ] Helpers for common methods, such as basic auth or JSON
  - [ ] Lifecycle hooks - e.g. easily log incoming / outgoing messages across your
  whole project
- - [X] (ish) Virtual Attributes - e.g. specify that your API takes a customer, and use
- that customer in your data munging phase (or anywhere really)
 
 ## Installation
 
@@ -34,6 +33,14 @@ And then execute:
 Or install it yourself as:
 
     $ gem install structured_api
+
+## Examples
+
+See the `examples/` folder for real-world examples.
+
+ - [Ghost CMS](examples/ghost_cms.rb) - this is a really simple example of using GhostCms' demo api to list posts & authors.
+ - [Ollama](examples/ollama.rb) - slightly more advanced - here we use callbacks and advanced use of attributes to chat with an ollama instance
+ - [Ollama (with tools!)](examples/ollama_with_tools.rb) - builds on the ollama example, shows how easily you can add tool support to your app.
 
 ## Usage
 

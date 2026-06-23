@@ -1,4 +1,5 @@
 ## Just a few utilities that I've been using in the examples.
+## Feel free to steal from here if you need it
 
 require_relative '../lib/structured_api'
 require 'json'
