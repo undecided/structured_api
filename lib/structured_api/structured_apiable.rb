@@ -1,5 +1,6 @@
 module StructuredApi
   module StructuredApiable
+    ALLOWED_LIFECYCLE_HOOKS = [:before_request, :after_response].freeze # TODO: Customisable
     # TODO: Raise an exception on the singleton methods if self.class == StructuredApi::Endpoint (it will pollute everything)
 
     # This is where the magic happens, and I agree - it's too much magic.
@@ -79,12 +80,18 @@ module StructuredApi
         instance_variable_set(:"@#{name}", result.call) # cache the result and return
       end
 
+      hook_checker = lambda do |hook_name|
+        raise "Invalid lifecycle hook name - available hooks: #{ALLOWED_LIFECYCLE_HOOKS.join(', ')}" unless ALLOWED_LIFECYCLE_HOOKS.include?(hook_name)
+      end
+
       other.define_singleton_method :append_lifecycle_hook do |hook_name, &block|
+        hook_checker.call(hook_name)
         lifecycle_hooks([{ name: hook_name, block: block }])
         self
       end
 
       other.define_singleton_method :prepend_lifecycle_hook do |hook_name, &block|
+        hook_checker.call(hook_name)
         get_attr(:lifecycle_hooks, []).unshift({ name: hook_name, block: block })
         self
       end
@@ -101,6 +108,7 @@ module StructuredApi
       end
 
       other.define_method :trigger_lifecycle_hooks do |hook_name, additional_data = {}|
+        hook_checker.call(hook_name)
         self.class.get_attr(:lifecycle_hooks, {})
           .select { |h| h[:name] == hook_name }
           .each do |h|

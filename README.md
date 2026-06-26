@@ -12,11 +12,9 @@ Eventually, this will encompass:
  and extend that for each endpoint
  - [X] Ability to define attributes and override previously defined attributes using methods
  - [X] Virtual Attributes - e.g. specify that your API takes a customer, and use
- - [ ] Data munging hooks - how do we transform our domain language into theirs?
- that customer in your data munging phase (or anywhere really)
+ - [X] Basic data munging / lifecycle hooks
  - [ ] Helpers for common methods, such as basic auth or JSON
- - [ ] Lifecycle hooks - e.g. easily log incoming / outgoing messages across your
- whole project
+ - [ ] Fluid data munging hooks - how do we transform our domain language into theirs?
 
 ## Installation
 
@@ -40,7 +38,7 @@ See the `examples/` folder for real-world examples.
 
  - [Ghost CMS](examples/ghost_cms.rb) - this is a really simple example of using GhostCms' demo api to list posts & authors.
  - [Ollama](examples/ollama.rb) - slightly more advanced - here we use callbacks and advanced use of attributes to chat with an ollama instance
- - [Ollama (with tools!)](examples/ollama_with_tools.rb) - builds on the ollama example, shows how easily you can add tool support to your app.
+ - [Ollama (with tools!)](examples/ollama_with_tools.rb) - builds on the ollama example, shows how you can implement retries and advanced state machines
 
 ## Usage
 
@@ -65,7 +63,7 @@ end
 
 CreateBlogPost.new.body("<h1>Hello World!</h1>").run!
 ```
-For a real-world and executable example of this, see the `examples/`` folder or `spec/simple_structure_spec.rb`
+For a real-world and executable example of this, see the `examples/` folder or `spec/simple_structure_spec.rb`
 
 For more information on the initial vision for this, check out ONE_DAY.md
 
