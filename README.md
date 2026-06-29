@@ -13,6 +13,7 @@ Eventually, this will encompass:
  - [X] Ability to define attributes and override previously defined attributes using methods
  - [X] Virtual Attributes - e.g. specify that your API takes a customer, and use
  - [X] Basic data munging / lifecycle hooks
+ - [X] Expose response code and response headers
  - [ ] Helpers for common methods, such as basic auth or JSON
  - [ ] Fluid data munging hooks - how do we transform our domain language into theirs?
 

@@ -28,7 +28,8 @@ module StructuredApi
         trigger_lifecycle_hooks(:before_request)
         final_params = typhoeus_params
         puts final_params.inspect if @debug
-        response = {response: Typhoeus::Request.new(*final_params).run.response_body}
+        client = Typhoeus::Request.new(*final_params).run
+        response = {response: client.response_body, status: client.response_code, headers: client.response_headers, client: client}
         puts response if @debug
         trigger_lifecycle_hooks(:after_response, response)
         response[:response]
